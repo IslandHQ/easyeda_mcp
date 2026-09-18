@@ -30,7 +30,8 @@
     "README.md"
   ],
   "bin": {
-    "easyeda-pro-mcp": "dist/index.js"
+    "easyeda-pro-mcp": "dist/index.js",
+    "easyeda-pro-mcp-daemon": "dist/daemon.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
