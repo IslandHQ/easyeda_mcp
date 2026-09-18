@@ -95,6 +95,40 @@ Core capabilities:
 - [Tools Reference](https://vlabsoft.org/easyeda_mcp/tools): available MCP tools
 - [Troubleshooting](https://vlabsoft.org/easyeda_mcp/troubleshooting): fixes by symptom
 
+## Multi-Agent Mode (Streamable HTTP Daemon)
+
+The stdio server spawns one process per MCP client, but the bridge uses a fixed WebSocket port (8765). Running multiple clients simultaneously causes port conflicts. The daemon solves this: one persistent process serves MCP over Streamable HTTP and shares a single EasyEDA extension connection across all clients.
+
+### Start the daemon
+
+```bash
+npm run build
+node dist/daemon.js
+```
+
+Windows: double-click `start-daemon.bat`
+
+The daemon listens on `http://127.0.0.1:8765/mcp`
+
+### Connect your MCP client
+
+Point any Streamable HTTP-compatible MCP client at:
+
+```
+http://127.0.0.1:8765/mcp
+```
+
+Then in EasyEDA Pro: MCP Bridge → Connect
+
+The extension connects to the same daemon via WebSocket upgrade on port 8765. Multiple clients (Zed, Hermes, Claude Code, etc.) can call tools concurrently through the shared endpoint.
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `EASYEDA_MCP_WS_HOST` | `127.0.0.1` | Bind address |
+| `EASYEDA_MCP_WS_PORT` | `8765` | HTTP + WS port |
+
 ## Releases
 
 Download packaged extension builds from [GitHub Releases](https://github.com/VLab-Software/easyeda_mcp/releases). Local builds also create `build/dist/easyeda_mcp_bridge.eext`.
