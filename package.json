@@ -32,12 +32,14 @@
     "LICENSE"
   ],
   "bin": {
-    "easyeda-pro-mcp": "dist/index.js"
+    "easyeda-pro-mcp": "dist/index.js",
+    "easyeda-pro-mcp-daemon": "dist/daemon.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:extension": "esbuild extension/src/index.ts --bundle --platform=browser --format=iife --global-name=edaEsbuildExportName --outfile=extension/dist/index.js",
     "check:dependencies": "node scripts/check-dependencies.mjs",
+    "daemon": "node dist/daemon.js",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

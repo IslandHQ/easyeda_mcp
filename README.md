@@ -181,6 +181,81 @@ Click **[Install in VS Code](https://vscode.dev/redirect?url=vscode%3Amcp%2Finst
 
 ---
 
+## Multi-Agent Mode (Streamable HTTP Daemon)
+
+By default, each MCP client launches its own `stdio` server process, which binds to the fixed local WebSocket port (`8765`). Running multiple AI clients at the same time causes a port conflict on `8765`.
+
+The **Streamable HTTP Daemon** solves this by running a single persistent local process that serves both **MCP Streamable HTTP** and the **EasyEDA Pro WebSocket upgrade** on the same port, allowing multiple MCP clients or agents to share one live EasyEDA Pro extension connection concurrently.
+
+### Starting the Daemon
+
+Build and launch from a local checkout:
+
+```bash
+npm run build && npm run daemon
+```
+
+Or run directly with Node.js (or via the `easyeda-pro-mcp-daemon` bin):
+
+```bash
+node dist/daemon.js
+```
+
+On Windows, you can also use the included launcher script from the repository root (any CLI flags are forwarded to `dist/daemon.js`):
+
+```bat
+start-daemon.bat
+```
+
+### CLI Options
+
+CLI flags override environment variables (both `--flag value` and `--flag=value` forms are supported):
+
+| Option | Description |
+| --- | --- |
+| `--host <host>` | Bind host for HTTP and WebSocket traffic (default `127.0.0.1`) |
+| `--port <port>` | Shared port for Streamable HTTP and WebSocket bridge (default `8765`) |
+| `--path <path>` | HTTP path for Streamable HTTP MCP requests (default `/mcp`) |
+| `--version`, `-v` | Print server version and exit |
+| `--help`, `-h` | Print CLI usage information and exit |
+
+### Environment Variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EASYEDA_MCP_WS_HOST` | `127.0.0.1` | Host interface to bind the HTTP/WebSocket server |
+| `EASYEDA_MCP_WS_PORT` | `8765` | Port shared by Streamable HTTP and the EasyEDA Pro WebSocket bridge |
+| `EASYEDA_MCP_HTTP_PATH` | `/mcp` | URL path handling MCP Streamable HTTP requests |
+
+### Endpoints
+
+With default settings (`127.0.0.1:8765`):
+
+- **MCP Streamable HTTP**: `http://127.0.0.1:8765/mcp`
+- **Health & Discovery**: `GET http://127.0.0.1:8765/health` and `GET http://127.0.0.1:8765/`
+- **Extension WebSocket Bridge**: `ws://127.0.0.1:8765`
+
+### Connecting Clients
+
+1. Start the daemon and confirm it is reachable (for example, `curl http://127.0.0.1:8765/health`).
+2. Point each Streamable HTTP-compatible MCP client to `http://127.0.0.1:8765/mcp` — for example:
+
+   ```json
+   {
+     "mcpServers": {
+       "easyeda-pro": {
+         "url": "http://127.0.0.1:8765/mcp"
+       }
+     }
+   }
+   ```
+
+   *(Some clients such as VS Code use `"servers"` with `"type": "http"` and `"url": "http://127.0.0.1:8765/mcp"`.)*
+
+3. In EasyEDA Pro, click **MCP Bridge -> Connect** (or **MCP Bridge -> Reconnect**) in the top toolbar so the extension connects to `ws://127.0.0.1:8765`. Once connected, `GET /health` reports `"bridgeConnected": true` and all connected MCP clients share the same bridge session.
+
+---
+
 ## Your First Prompts
 
 Verify that the bridge is connected and sees your open document:

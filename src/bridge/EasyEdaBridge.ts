@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { IncomingMessage, Server as HttpServer } from "node:http";
+import type { Duplex } from "node:stream";
 import { WebSocketServer, WebSocket } from "ws";
 import type { EditorClient } from "../editor/EditorClient.js";
 import {
@@ -29,11 +31,24 @@ export type EasyEdaBridgeOptions = {
   logger?: Pick<Console, "error" | "warn" | "info">;
 };
 
+function parseEnvPort(raw: string | undefined, fallback: number): number {
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65535) {
+    return fallback;
+  }
+  return parsed;
+}
+
 export class EasyEdaBridge implements EditorClient {
   private readonly host: string;
   private readonly port: number;
   private readonly logger: Pick<Console, "error" | "warn" | "info">;
   private wss?: WebSocketServer;
+  private attachedHttpServer?: HttpServer;
+  private upgradeHandler?: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
   private socket?: WebSocket;
   private readonly pending = new Map<string, PendingCall>();
   private status: EditorStatus = createDisconnectedStatus();
@@ -42,14 +57,15 @@ export class EasyEdaBridge implements EditorClient {
     const envHost = process.env.EASYEDA_MCP_WS_HOST?.trim();
     const envPort = process.env.EASYEDA_MCP_WS_PORT?.trim();
     this.host = options.host ?? (envHost || "127.0.0.1");
-    this.port = options.port ?? (envPort ? Number(envPort) : 8765);
+    this.port = options.port ?? parseEnvPort(envPort, 8765);
     this.logger = options.logger ?? console;
   }
 
   get endpoint(): string {
-    const address = this.wss?.address();
+    const address = this.attachedHttpServer ? this.attachedHttpServer.address() : this.wss?.address();
     const activePort = typeof address === "object" && address ? address.port : this.port;
-    return `ws://${this.host}:${activePort}`;
+    const formattedHost = this.host.includes(":") && !this.host.startsWith("[") ? `[${this.host}]` : this.host;
+    return `ws://${formattedHost}:${activePort}`;
   }
 
   getStatus(): EditorStatus {
@@ -70,19 +86,54 @@ export class EasyEdaBridge implements EditorClient {
     this.logger.error(`[easyeda-mcp] WebSocket bridge listening at ${this.endpoint}`);
   }
 
+  attachToHttpServer(httpServer: HttpServer): void {
+    if (this.attachedHttpServer === httpServer && this.wss) {
+      return;
+    }
+    if (this.wss) {
+      throw new Error("EasyEdaBridge is already started or attached to an HTTP server.");
+    }
+
+    this.wss = new WebSocketServer({ noServer: true });
+    this.upgradeHandler = (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+      this.wss?.handleUpgrade(req, socket, head, (ws) => this.attachSocket(ws));
+    };
+    httpServer.on("upgrade", this.upgradeHandler);
+    this.attachedHttpServer = httpServer;
+  }
+
   async stop(): Promise<void> {
+    if (this.attachedHttpServer && this.upgradeHandler) {
+      this.attachedHttpServer.off("upgrade", this.upgradeHandler);
+    }
+    this.attachedHttpServer = undefined;
+    this.upgradeHandler = undefined;
+
     this.rejectAll(new BridgeUnavailableError("EasyEDA Pro bridge is stopping."));
     this.socket?.close();
-    await new Promise<void>((resolve, reject) => {
-      if (!this.wss) {
-        resolve();
-        return;
+
+    const wss = this.wss;
+    if (wss) {
+      for (const client of wss.clients) {
+        if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
+          client.close();
+        }
       }
-      this.wss.close((error) => (error ? reject(error) : resolve()));
-    });
-    this.wss = undefined;
-    this.socket = undefined;
-    this.status = createDisconnectedStatus();
+    }
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        if (!wss) {
+          resolve();
+          return;
+        }
+        wss.close((error) => (error ? reject(error) : resolve()));
+      });
+    } finally {
+      this.wss = undefined;
+      this.socket = undefined;
+      this.status = createDisconnectedStatus();
+    }
   }
 
   async call(method: string, params?: unknown, timeoutMs = 10_000): Promise<unknown> {
